@@ -1,0 +1,21 @@
+name: Test release-type node with skip flags
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          release-type: node
+          skip-github-release: 'true'
+          skip-github-pull-request: 'true'
+          target-branch: 'act-harness'
+
+      - name: Assert action completed without failure
+        run: |
+          echo "Action completed successfully with release-type=node and both skips enabled"
+          echo "PASS"

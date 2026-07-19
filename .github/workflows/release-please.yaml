@@ -1,0 +1,112 @@
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+name: release-please
+permissions: {}
+env:
+  ACTION_NAME: release-please-action
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: 20
+    - name: install
+      run: npm ci
+    - name: build
+      run: npm run build
+    - name: commit
+      run: |-
+        set -e
+        # get current commit hash
+        CURRENT_HASH=$(git rev-parse HEAD)
+        # get last commit hash of last build dist
+        LAST_BUILD_HASH=$(git log --author=google-github-actions-bot -1 --pretty=format:"%H")
+        DIFF=""
+        # build and commit dist if diff
+        git config --global user.name "actions-bot"
+        git config user.email 'github-actions-bot@google.com'
+        git add dist/
+        git diff-index --quiet HEAD || git commit -m "chore: build dist ${ACTION_NAME}"
+        # if last commit hash of last build dist was found, get logs of commits in btw for PR body
+        if [ -z "$LAST_BUILD_HASH" ]
+        then
+              echo "Unable to find last commit by bot, skipping diff gen"
+        else
+              DIFF=$(git log ${LAST_BUILD_HASH}...${CURRENT_HASH} --oneline)
+              echo $DIFF
+        fi
+        # set env vars - sanitize values before writing to GITHUB_ENV
+        safe_current_hash=$(printf '%s' "$CURRENT_HASH" | tr -d '\n\r')
+        echo "CURRENT_HASH=${safe_current_hash}" >> "$GITHUB_ENV"
+        safe_last_build_hash=$(printf '%s' "$LAST_BUILD_HASH" | tr -d '\n\r')
+        echo "LAST_BUILD_HASH=${safe_last_build_hash}" >> "$GITHUB_ENV"
+        safe_diff=$(printf '%s' "$DIFF" | tr -d '\n\r')
+        echo "DIFF=${safe_diff}" >> "$GITHUB_ENV"
+    - name: Create PR with dist
+      uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5
+      with:
+        token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+        commit-message: Build dist
+        author: "actions-bot <github-actions-bot@google.com>"
+        title: "chore: build dist"
+        body: |
+          Build dist PR
+          ${{env.DIFF}}
+        labels: automated pr
+        branch: create-pull-request/build-dist
+        delete-branch: true
+  release-please-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    needs: [build]
+    steps:
+      - uses: google-github-actions/release-please-action@e4dc86ba9405554aeba3c6bb2d169500e7d3b4ee # main
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-type: node
+          skip-github-pull-request: true
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: tag major and patch versions
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_MAJOR: ${{ steps.release.outputs.major }}
+          RELEASE_MINOR: ${{ steps.release.outputs.minor }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git remote add gh-token "https://${GITHUB_TOKEN}@github.com/google-github-actions/release-please-action.git"
+          git tag -d "v${RELEASE_MAJOR}" || true
+          git tag -d "v${RELEASE_MAJOR}.${RELEASE_MINOR}" || true
+          git push origin ":v${RELEASE_MAJOR}" || true
+          git push origin ":v${RELEASE_MAJOR}.${RELEASE_MINOR}" || true
+          git tag -a "v${RELEASE_MAJOR}" -m "Release v${RELEASE_MAJOR}"
+          git tag -a "v${RELEASE_MAJOR}.${RELEASE_MINOR}" -m "Release v${RELEASE_MAJOR}.${RELEASE_MINOR}"
+          git push origin "v${RELEASE_MAJOR}"
+          git push origin "v${RELEASE_MAJOR}.${RELEASE_MINOR}"
+        if: ${{ steps.release.outputs.release_created }}
+  release-please-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    needs:
+      - build
+      - release-please-release
+    steps:
+      - id: release-pr
+        uses: google-github-actions/release-please-action@e4dc86ba9405554aeba3c6bb2d169500e7d3b4ee # main
+        with:
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          release-type: node
+          skip-github-release: true

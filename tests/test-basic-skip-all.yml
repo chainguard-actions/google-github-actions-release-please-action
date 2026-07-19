@@ -1,0 +1,20 @@
+name: Test basic skip-all (no side effects)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          skip-github-release: 'true'
+          skip-github-pull-request: 'true'
+          target-branch: 'act-harness'
+
+      - name: Assert action completed without failure
+        run: |
+          echo "Action completed successfully with both skips enabled"
+          echo "PASS"

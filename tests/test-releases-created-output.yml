@@ -1,0 +1,29 @@
+name: Test releases_created output when no releases pending
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          release-type: node
+          skip-github-release: 'true'
+          skip-github-pull-request: 'true'
+          target-branch: 'act-harness'
+
+      - name: Assert releases_created output is not set when release is skipped
+        env:
+          RELEASES_CREATED: ${{ steps.action.outputs.releases_created }}
+        run: |
+          echo "releases_created: '$RELEASES_CREATED'"
+          # When skip-github-release=true, outputReleases is never called,
+          # so releases_created output should be empty/unset
+          if [ -n "$RELEASES_CREATED" ]; then
+            echo "FAIL: releases_created should not be set when skip-github-release=true, got: $RELEASES_CREATED"
+            exit 1
+          fi
+          echo "PASS: releases_created is empty as expected when skip-github-release=true"
